@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Call Support</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      padding: 36px 32px;
+      width: 320px;
+      text-align: center;
+      backdrop-filter: blur(12px);
+    }
+
+    .logo {
+      width: 64px; height: 64px;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      border-radius: 20px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 28px;
+    }
+
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: rgba(255,255,255,0.55); margin-bottom: 28px; line-height: 1.5; }
+
+    .btn-call {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .btn-call.idle {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+    }
+    .btn-call.idle:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(34,197,94,0.4); }
+    .btn-call.calling { background: #374151; color: #9ca3af; cursor: not-allowed; }
+    .btn-call.active {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+      animation: pulse 2s infinite;
+    }
+    .btn-call.active:hover { background: #dc2626; }
+
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50%      { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+    }
+
+    .status-box {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+    .status-box.show { display: block; }
+    .status-box.info    { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+    .status-box.success { background: rgba(34,197,94,0.15);  color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+    .status-box.error   { background: rgba(239,68,68,0.15);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+
+    .timer {
+      font-size: 28px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #4ade80;
+      margin: 16px 0 4px;
+      display: none;
+    }
+
+    .mic-icon { font-size: 22px; }
+    .footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.25);
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">📞</div>
+  <h1>Talk to Us</h1>
+  <p class="subtitle">Click the button below to connect with a live support agent instantly — no phone number needed.</p>
+
+  <div id="timer" class="timer">00:00</div>
+
+  <button id="callBtn" class="btn-call idle" onclick="handleClick()">
+    <span class="mic-icon">🎙️</span>
+    <span id="btnText">Start Call</span>
+  </button>
+
+  <div id="statusBox" class="status-box"></div>
+
+  <div class="footer">Powered by Business Dialer · Free browser call</div>
+</div>
+
+<audio id="remoteAudio" autoplay></audio>
+
+<script>
+  const ICE = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+
+  // Detect base URL (widget is served from the backend)
+  const BASE_URL = window.location.origin;
+  const WS_BASE  = BASE_URL.replace(/^http/, 'ws');
+
+  let ws = null;
+  let pc = null;
+  let localStream = null;
+  let callId = null;
+  let timerInterval = null;
+  let seconds = 0;
+  let state = 'idle'; // idle | connecting | ringing | active | ended
+
+  function setStatus(msg, type = 'info') {
+    const box = document.getElementById('statusBox');
+    box.textContent = msg;
+    box.className = `status-box show ${type}`;
+  }
+
+  function clearStatus() {
+    document.getElementById('statusBox').className = 'status-box';
+  }
+
+  function setBtn(s) {
+    const btn  = document.getElementById('callBtn');
+    const text = document.getElementById('btnText');
+    btn.className = `btn-call ${s}`;
+    if (s === 'idle')    { text.textContent = 'Start Call'; btn.previousElementSibling.textContent = '🎙️'; }
+    if (s === 'calling') { text.textContent = 'Connecting…'; btn.previousElementSibling.textContent = '⏳'; }
+    if (s === 'active')  { text.textContent = 'End Call'; btn.previousElementSibling.textContent = '📵'; }
+  }
+
+  function startTimer() {
+    seconds = 0;
+    document.getElementById('timer').style.display = 'block';
+    timerInterval = setInterval(() => {
+      seconds++;
+      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const s = String(seconds % 60).padStart(2, '0');
+      document.getElementById('timer').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    document.getElementById('timer').style.display = 'none';
+  }
+
+  async function handleClick() {
+    if (state === 'idle')   { await startCall(); return; }
+    if (state === 'active') { endCall(); return; }
+  }
+
+  async function startCall() {
+    state = 'connecting';
+    setBtn('calling');
+    setStatus('Requesting microphone access…', 'info');
+
+    // 1. Get microphone
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      setStatus('Microphone access denied. Please allow microphone and try again.', 'error');
+      state = 'idle'; setBtn('idle'); return;
+    }
+
+    setStatus('Connecting to support…', 'info');
+
+    // 2. Get guest token
+    let token;
+    try {
+      const res = await fetch(`${BASE_URL}/api/widget/token`);
+      const d   = await res.json();
+      token = d.token;
+    } catch {
+      setStatus('Could not reach support server. Please try again.', 'error');
+      cleanup(); return;
+    }
+
+    // 3. Open WebSocket
+    ws = new WebSocket(`${WS_BASE}/widget-ws?token=${encodeURIComponent(token)}`);
+
+    ws.onopen = async () => {
+      // 4. Create peer connection and make offer
+      pc = new RTCPeerConnection({ iceServers: ICE });
+      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+      pc.ontrack = ({ streams }) => {
+        document.getElementById('remoteAudio').srcObject = streams[0];
+      };
+
+      pc.onicecandidate = ({ candidate }) => {
+        if (candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ice-candidate', callId, candidate }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') {
+          state = 'active';
+          setBtn('active');
+          setStatus('Connected! You\'re speaking with a support agent.', 'success');
+          startTimer();
+        }
+        if (['disconnected', 'failed', 'closed'].includes(pc.connectionState) && state === 'active') {
+          endCall();
+        }
+      };
+
+      callId = `guest-${Date.now()}`;
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'call', to: 'queue', callId, offer }));
+    };
+
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === 'answer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+      }
+
+      if (msg.type === 'ice-candidate') {
+        try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+      }
+
+      if (msg.type === 'call-error') {
+        setStatus(msg.message || 'No agents available. Please try again later.', 'error');
+        cleanup();
+      }
+
+      if (msg.type === 'hangup') {
+        setStatus('Agent ended the call.', 'info');
+        cleanup();
+      }
+    };
+
+    ws.onerror = () => {
+      setStatus('Connection error. Please check your internet and try again.', 'error');
+      cleanup();
+    };
+
+    ws.onclose = () => {
+      if (state !== 'idle') { setStatus('Disconnected from support.', 'info'); cleanup(); }
+    };
+  }
+
+  function endCall() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'hangup', callId }));
+    }
+    setStatus('Call ended. Thank you for contacting us!', 'info');
+    cleanup();
+  }
+
+  function cleanup() {
+    state = 'idle';
+    setBtn('idle');
+    stopTimer();
+    localStream?.getTracks().forEach(t => t.stop());
+    localStream = null;
+    try { pc?.close(); } catch {}
+    pc = null;
+    try { ws?.close(); } catch {}
+    ws = null;
+    callId = null;
+  }
+</script>
+</body>
+</html>
