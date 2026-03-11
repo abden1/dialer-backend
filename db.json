@@ -751,20 +751,20 @@
       "builtinSip": false
     },
     "2001": {
-      "mode": "sip",
+      "mode": "webrtc",
       "sipServer": "ws://localhost:5000/sip-ws",
       "sipUsername": "abden",
       "sipPassword": "",
       "sipDisplayName": "abdalla",
-      "builtinSip": true
+      "builtinSip": false
     },
     "2003": {
-      "mode": "sip",
+      "mode": "webrtc",
       "sipServer": "ws://localhost:5000/sip-ws",
       "sipUsername": "boda",
       "sipPassword": "",
       "sipDisplayName": "boda",
-      "builtinSip": true
+      "builtinSip": false
     },
     "global": {
       "telnyxApiKey": "",
