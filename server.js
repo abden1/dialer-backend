@@ -375,7 +375,7 @@ app.post('/api/auth/login', async (req, res) => {
     JWT_SECRET, { expiresIn: '7d' }
   );
   const team = getUserTeam(user.id, db);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role, name: user.name, teamId: user.teamId || null, teamName: team?.name || null } });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, name: user.name, teamId: user.teamId || null, teamName: team?.name || null, photoUrl: user.photoUrl || null } });
 });
 
 app.get('/api/auth/me', auth, (req, res) => {
@@ -1035,16 +1035,25 @@ app.post('/api/posts/:id/like', auth, (req, res) => {
   res.json({ likes: post.likes, likeCount: post.likes.length, likedByMe: post.likes.includes(req.user.id) });
 });
 
-app.post('/api/posts/:id/comments', auth, (req, res) => {
-  const { text } = req.body;
+app.post('/api/posts/:id/comments', auth, upload.single('image'), async (req, res) => {
+  const text = req.body.text;
   if (!text?.trim()) return res.status(400).json({ error: 'text required' });
   const id   = Number(req.params.id);
   const db   = readDB();
   const post = (db.posts || []).find(p => p.id === id);
   if (!post) return res.status(404).json({ error: 'Not found' });
   if (!post.comments) post.comments = [];
+  let imageUrl = null;
+  if (req.file) {
+    try {
+      const ext      = path.extname(req.file.originalname) || '.bin';
+      const filename = `comment-${req.user.id}-${Date.now()}${ext}`;
+      const localPath = req.file.path ? `/uploads/posts/${path.basename(req.file.path)}` : null;
+      imageUrl = await uploadToStorage('post-images', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath);
+    } catch (e) { console.error('Comment image upload error:', e.message); }
+  }
   const user    = db.users.find(u => u.id === req.user.id);
-  const comment = { id: genId(), userId: req.user.id, userName: user?.name || req.user.name, role: user?.role || req.user.role, text: text.trim(), createdAt: new Date().toISOString() };
+  const comment = { id: genId(), userId: req.user.id, userName: user?.name || req.user.name, role: user?.role || req.user.role, text: text.trim(), imageUrl, createdAt: new Date().toISOString() };
   post.comments.push(comment);
   writeDB(db);
   wsClients.forEach(c => { if (c.role !== 'guest') wsSend(c, { type: 'post-comment', postId: id, comment, commentCount: post.comments.length }); });
