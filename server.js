@@ -168,7 +168,7 @@ wss.on('connection', (ws, req) => {
   let userId;
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    userId      = decoded.id;
+    userId      = Number(decoded.id); // force number so Map keys are always consistent
     ws.userId   = userId;
     ws.userName = decoded.name;
     ws.role     = decoded.role || 'agent';
@@ -211,6 +211,7 @@ wss.on('connection', (ws, req) => {
         } else {
           const targetId       = Number(msg.to);
           const internalTarget = wsClients.get(targetId);
+          console.log(`📞 Call: ${ws.userName}(${userId}) → ${targetId} | online clients: [${[...wsClients.keys()].join(',')}] | found: ${!!internalTarget} | open: ${internalTarget?.readyState === WebSocket.OPEN}`);
           if (internalTarget && internalTarget.readyState === WebSocket.OPEN) {
             wsCalls.get(callId).calleeId = targetId;
             wsSend(internalTarget, { type: 'incoming', callId, from: userId, fromName: ws.userName, offer: msg.offer });
