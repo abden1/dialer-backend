@@ -1231,7 +1231,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', clients: wsClients
 // START
 // ═══════════════════════════════════════════════════════════════════════
 ensureAdmin().then(() => {
-  const sipReady = initSip(JWT_SECRET);
+  const sipReady = initSip(JWT_SECRET, wsClients);
   server.listen(PORT, () => {
     console.log(`\n✅ Server  → http://localhost:${PORT}`);
     console.log(`✅ Signals → ws://localhost:${PORT}/ws`);
