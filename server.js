@@ -38,14 +38,19 @@ const _uploadStorage = supabase
     });
 const upload = multer({ storage: _uploadStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-async function uploadToStorage(bucket, filename, buffer, contentType, localPath) {
+async function uploadToStorage(bucket, filename, buffer, contentType, localPath, req) {
   if (supabase) {
     const { error } = await supabase.storage.from(bucket).upload(filename, buffer, { contentType, upsert: true });
     if (error) throw new Error('Supabase upload error: ' + error.message);
     const { data } = supabase.storage.from(bucket).getPublicUrl(filename);
     return data.publicUrl;
   }
-  return localPath; // disk path already written by multer
+  // Return an absolute URL so frontend (on Vercel) can load images from Railway
+  if (req && localPath) {
+    const base = `${req.protocol}://${req.get('host')}`;
+    return base + localPath;
+  }
+  return localPath;
 }
 
 const app    = express();
@@ -987,7 +992,7 @@ app.post('/api/posts', auth, upload.single('image'), async (req, res) => {
       const ext      = path.extname(req.file.originalname) || '.bin';
       const filename = `post-${req.user.id}-${Date.now()}${ext}`;
       const localPath = req.file.path ? `/uploads/posts/${path.basename(req.file.path)}` : null;
-      imageUrl = await uploadToStorage('post-images', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath);
+      imageUrl = await uploadToStorage('post-images', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath, req);
     } catch (e) { console.error('Image upload error:', e.message); }
   }
   const db   = readDB();
@@ -1049,7 +1054,7 @@ app.post('/api/posts/:id/comments', auth, upload.single('image'), async (req, re
       const ext      = path.extname(req.file.originalname) || '.bin';
       const filename = `comment-${req.user.id}-${Date.now()}${ext}`;
       const localPath = req.file.path ? `/uploads/posts/${path.basename(req.file.path)}` : null;
-      imageUrl = await uploadToStorage('post-images', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath);
+      imageUrl = await uploadToStorage('post-images', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath, req);
     } catch (e) { console.error('Comment image upload error:', e.message); }
   }
   const user    = db.users.find(u => u.id === req.user.id);
@@ -1107,7 +1112,7 @@ app.post('/api/profile/photo', auth, upload.single('photo'), async (req, res) =>
     const ext      = path.extname(req.file.originalname) || '.jpg';
     const filename = `avatar-${req.user.id}-${Date.now()}${ext}`;
     const localPath = req.file.path ? `/uploads/avatars/${path.basename(req.file.path)}` : null;
-    const photoUrl  = await uploadToStorage('avatars', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath);
+    const photoUrl  = await uploadToStorage('avatars', filename, req.file.buffer || fs.readFileSync(req.file.path), req.file.mimetype, localPath, req);
     user.photoUrl = photoUrl;
     writeDB(db);
     res.json({ photoUrl });
