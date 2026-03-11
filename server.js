@@ -260,6 +260,10 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'ping':
+        wsSend(ws, { type: 'pong' });
+        break;
+
       case 'chat': {
         if (!msg.text?.trim() || ws.role === 'guest') break;
         const db   = readDB();
