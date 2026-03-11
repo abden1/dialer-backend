@@ -81,17 +81,13 @@ if (sipWss) {
 
         if (expires === 0) {
           sipClients.delete(ext);
-          if (_wsClients && ws._sipUser) _wsClients.delete(ws._sipUser.id);
           console.log(`[SIP] ↩ ${ext} unregistered`);
         } else {
           ws._sipExtension = ext;
           sipClients.set(ext, { ws, contact: msg.headers.contact?.[0]?.uri });
-          // Also register in presence map so agent appears online in the app
-          if (_wsClients && ws._sipUser) {
-            ws.role     = ws._sipUser.role || 'agent';
-            ws.userName = ws._sipUser.name || ws._sipUser.username;
-            _wsClients.set(ws._sipUser.id, ws);
-          }
+          // Do NOT overwrite wsClients here — the WebRTC presence phone already
+          // registered this agent with the correct JSON-signaling WebSocket.
+          // Overwriting with the SIP socket would break agent-to-agent call routing.
           console.log(`[SIP] ✅ ${ext} registered (expires=${expires}s)`);
         }
 
@@ -168,7 +164,6 @@ if (sipWss) {
     ws.on('close', () => {
       if (ws._sipExtension) {
         sipClients.delete(ws._sipExtension);
-        if (_wsClients && ws._sipUser) _wsClients.delete(ws._sipUser.id);
         console.log(`[SIP] 📴 ${ws._sipExtension} disconnected`);
       }
       for (const [callId, call] of sipCalls) {
