@@ -209,10 +209,14 @@ wss.on('connection', (ws, req) => {
             wsCalls.delete(callId);
           }
         } else {
-          const internalTarget = wsClients.get(Number(msg.to));
-          if (internalTarget) {
-            wsCalls.get(callId).calleeId = Number(msg.to);
+          const targetId       = Number(msg.to);
+          const internalTarget = wsClients.get(targetId);
+          if (internalTarget && internalTarget.readyState === WebSocket.OPEN) {
+            wsCalls.get(callId).calleeId = targetId;
             wsSend(internalTarget, { type: 'incoming', callId, from: userId, fromName: ws.userName, offer: msg.offer });
+          } else if (/^\d+$/.test(String(msg.to))) {
+            wsSend(ws, { type: 'call-error', callId, message: 'Agent is offline or not available right now.' });
+            wsCalls.delete(callId);
           } else {
             wsSend(ws, { type: 'call-error', callId, message: 'PSTN calls require SIP mode.' });
             wsCalls.delete(callId);
