@@ -1,0 +1,22 @@
+# DILO's backend keeps WebSocket connections open for calls and presence and runs a SIP bridge,
+# so it needs a server that stays up — Vercel's functions cannot host it. Render's free plan can:
+# render.com → New → Blueprint → choose this repository → Apply.
+# Then set VITE_API_URL on the dialer-frontend Vercel project to this service's URL and redeploy.
+services:
+  - type: web
+    name: dilo-backend
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: JWT_SECRET
+        generateValue: true
+      # Optional: a Supabase project for uploads (images, avatars). Without it files stay on the server.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
